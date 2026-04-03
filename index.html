@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="author" content="Nishita Waghela" />
+  <meta name="description" content="Doc Chat — resume project by Nishita Waghela: upload a PDF, chat with page-aware answers using PDF.js and OpenAI." />
+  <title>Doc Chat · Resume project — Nishita Waghela</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.9.179/pdf.min.js"></script>
+  <style>
+    :root {
+      --bg-page: #000000;
+      --bg-section: #030303;
+      /* Glass: bg-white/2–3%, border white/10 */
+      --surface: rgba(255, 255, 255, 0.03);
+      --surface-solid: #030303;
+      --border: rgba(255, 255, 255, 0.1);
+      --border-strong: rgba(168, 85, 247, 0.35);
+      /* Text: white, gray-300–600 on black */
+      --text: #ffffff;
+      --muted: #d1d5db;
+      --dim: #6b7280;
+      --dimmer: #4b5563;
+      /* Primary purple (purple-400 / 500 / 600) */
+      --purple-400: #c084fc;
+      --purple-500: #a855f7;
+      --purple-600: #9333ea;
+      /* Secondary violet */
+      --violet-300: #c4b5fd;
+      --violet-400: #a78bfa;
+      --violet-500: #8b5cf6;
+      --indigo-500: #6366f1;
+      --fuchsia-500: #d946ef;
+      /* Hero-style line highlights ~#BF80FF / #C896FF */
+      --hero-line-a: rgba(191, 128, 255, 0.22);
+      --hero-line-b: rgba(200, 150, 255, 0.16);
+      --accent: var(--purple-400);
+      --accent-soft: rgba(168, 85, 247, 0.14);
+      --accent-glow: rgba(168, 85, 247, 0.5);
+      --user: linear-gradient(
+        135deg,
+        var(--purple-600) 0%,
+        var(--purple-500) 40%,
+        var(--violet-500) 70%,
+        var(--indigo-500) 100%
+      );
+      --assistant: rgba(255, 255, 255, 0.02);
+      --error-bg: rgba(127, 29, 29, 0.42);
+      --error-border: rgba(248, 113, 113, 0.38);
+      --error-text: #fecaca;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --font: "Outfit", system-ui, -apple-system, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100%;
+      height: 100vh;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(1050px 640px at 12% -8%, var(--hero-line-a), transparent 54%),
+        radial-gradient(820px 500px at 90% 10%, var(--hero-line-b), transparent 50%),
+        radial-gradient(560px 420px at 72% 96%, rgba(217, 70, 239, 0.07), transparent 48%),
+        radial-gradient(480px 360px at 8% 88%, rgba(99, 102, 241, 0.07), transparent 45%),
+        var(--bg-page);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.25rem clamp(0.75rem, 3vw, 1.75rem);
+    }
+
+    .app {
+      width: min(920px, 100%);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) + 6px);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      overflow: hidden;
+    }
+
+    header {
+      flex-shrink: 0;
+      padding: 1.1rem 1.35rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem 1.5rem;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent);
+      background-color: var(--bg-section);
+    }
+
+    .brand {
+      display: flex;
+      gap: 0.85rem;
+      align-items: center;
+    }
+
+    .logo {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: var(--user);
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #fff;
+      letter-spacing: -0.03em;
+      box-shadow:
+        0 8px 28px rgba(168, 85, 247, 0.42),
+        0 0 0 1px rgba(255, 255, 255, 0.08);
+    }
+
+    .brand-text h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-text p {
+      margin: 0.2rem 0 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+      max-width: 22rem;
+      line-height: 1.35;
+    }
+
+    .upload-block {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      align-items: flex-end;
+      text-align: right;
+    }
+
+    .upload-block label.upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 1rem;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border-strong);
+      color: var(--accent);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+
+    .upload-block label.upload-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(192, 132, 252, 0.55);
+      background: rgba(168, 85, 247, 0.22);
+    }
+
+    .upload-block input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .upload-hint {
+      font-size: 0.72rem;
+      color: var(--dim);
+      font-family: var(--mono);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 0.9rem 1.35rem 1.15rem;
+      gap: 0.65rem;
+      background-color: var(--bg-section);
+    }
+
+    .pdf-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      min-height: 1.5em;
+    }
+
+    .pdf-status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--dim);
+      flex-shrink: 0;
+    }
+
+    .pdf-status.ready::before {
+      background: var(--purple-500);
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .pdf-status.ready {
+      color: var(--text);
+    }
+
+    #chat-log {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      padding: 0.35rem 0.15rem 0.5rem;
+      min-height: 220px;
+      scroll-behavior: smooth;
+    }
+
+    #chat-log::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #chat-log::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #chat-log::-webkit-scrollbar-thumb {
+      background: rgba(168, 85, 247, 0.22);
+      border-radius: 999px;
+    }
+
+    .row {
+      display: flex;
+      width: 100%;
+    }
+
+    .row.user {
+      justify-content: flex-end;
+    }
+
+    .row.assistant,
+    .row.error,
+    .row.loading {
+      justify-content: flex-start;
+    }
+
+    .bubble-wrap {
+      max-width: min(88%, 34rem);
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .bubble-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--dim);
+      padding: 0 0.2rem;
+    }
+
+    .row.user .bubble-label {
+      text-align: right;
+      color: rgba(192, 132, 252, 0.92);
+    }
+
+    .msg {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-sm);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 0.94rem;
+    }
+
+    .msg.user {
+      background: var(--user);
+      color: #fff;
+      border-radius: var(--radius-sm) var(--radius-sm) 6px var(--radius-sm);
+      box-shadow:
+        0 12px 34px rgba(168, 85, 247, 0.28),
+        0 0 0 1px rgba(255, 255, 255, 0.06);
+    }
+
+    .msg.assistant {
+      background: var(--assistant);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm) var(--radius-sm) var(--radius-sm) 6px;
+    }
+
+    .msg.error {
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      border-radius: var(--radius-sm);
+    }
+
+    .msg.loading {
+      background: var(--surface-solid);
+      border: 1px dashed rgba(255, 255, 255, 0.14);
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      border-radius: var(--radius-sm);
+    }
+
+    .dots {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--purple-500);
+      animation: bounce 1.05s ease-in-out infinite;
+    }
+
+    .dots span:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    .dots span:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+
+    @keyframes bounce {
+      0%,
+      80%,
+      100% {
+        transform: translateY(0);
+        opacity: 0.35;
+      }
+      40% {
+        transform: translateY(-5px);
+        opacity: 1;
+      }
+    }
+
+    .composer {
+      display: flex;
+      gap: 0.65rem;
+      padding-top: 0.85rem;
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      align-items: flex-end;
+    }
+
+    .composer textarea {
+      flex: 1;
+      min-height: 48px;
+      max-height: 140px;
+      resize: vertical;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .composer textarea:focus {
+      border-color: rgba(168, 85, 247, 0.5);
+      box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.12);
+    }
+
+    .composer textarea::placeholder {
+      color: var(--dimmer);
+    }
+
+    .composer textarea:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .composer button {
+      padding: 0.75rem 1.25rem;
+      border: none;
+      border-radius: 14px;
+      background: var(--user);
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.9rem;
+      font-family: inherit;
+      cursor: pointer;
+      box-shadow:
+        0 8px 26px rgba(168, 85, 247, 0.32),
+        0 0 0 1px rgba(255, 255, 255, 0.08);
+      transition: transform 0.12s ease, filter 0.12s ease;
+    }
+
+    .composer button:hover:not(:disabled) {
+      filter: brightness(1.06);
+      transform: translateY(-1px);
+    }
+
+    .composer button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    @media (max-width: 540px) {
+      body {
+        padding: 0.5rem;
+      }
+
+      .app {
+        border-radius: var(--radius);
+      }
+
+      header {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .upload-block {
+        align-items: stretch;
+        text-align: left;
+      }
+
+      .upload-block label.upload-btn {
+        justify-content: center;
+      }
+    }
+
+    .brand-byline {
+      margin: 0.35rem 0 0;
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: var(--violet-300);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .site-footer {
+      flex-shrink: 0;
+      padding: 1rem 1.35rem 1.15rem;
+      border-top: 1px solid var(--border);
+      background-color: var(--bg-section);
+    }
+
+    .footer-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      max-width: 40rem;
+    }
+
+    .footer-created {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 400;
+      color: var(--muted);
+      letter-spacing: 0.01em;
+    }
+
+    .footer-tagline {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .footer-links {
+      margin: 0.35rem 0 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      font-size: 0.8rem;
+    }
+
+    .footer-links a {
+      color: var(--purple-400);
+      text-decoration: none;
+      border-bottom: 1px solid rgba(192, 132, 252, 0.35);
+      transition: color 0.15s ease, border-color 0.15s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--violet-300);
+      border-color: rgba(196, 181, 253, 0.55);
+    }
+
+    .footer-meta {
+      margin: 0.5rem 0 0;
+      font-size: 0.72rem;
+      color: var(--dimmer);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <div class="logo" aria-hidden="true">N</div>
+        <div class="brand-text">
+          <h1>Doc Chat</h1>
+          <p class="brand-byline">Resume project · Nishita Waghela · 2026</p>
+          <p>Upload a PDF, ask questions — answers use only that document, with page references.</p>
+        </div>
+      </div>
+      <div class="upload-block">
+        <label class="upload-btn" for="pdf-input">
+          <span aria-hidden="true">📄</span> Choose PDF
+        </label>
+        <input id="pdf-input" type="file" accept=".pdf,application/pdf" />
+        <span class="upload-hint">.pdf only · processed in your browser</span>
+      </div>
+    </header>
+
+    <main>
+      <p id="pdf-status" class="pdf-status">Upload a PDF to start chatting.</p>
+      <div id="chat-log" aria-live="polite"></div>
+      <div class="composer">
+        <textarea id="msg-input" placeholder="Ask something about your document…" rows="2" disabled></textarea>
+        <button type="button" id="send-btn" disabled>Send</button>
+      </div>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <p class="footer-created">Created by Nishita Waghela</p>
+        <p class="footer-tagline">
+          Full-stack style web project: conversational PDF Q&amp;A with grounded, page-cited replies.
+        </p>
+        <p class="footer-links">
+          <a href="https://github.com/" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://www.linkedin.com/in/nishitawaghela" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        </p>
+        <p class="footer-meta">© 2026 Nishita Waghela. Built to demonstrate product thinking, UX polish, and safe API usage.</p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      var PDFJS_VER = "3.9.179";
+      var PDF_TRUNCATE_LEN = 180000;
+      var CHAT_URL = "/api/chat/completions";
+
+      if (typeof pdfjsLib !== "undefined") {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/" + PDFJS_VER + "/pdf.worker.min.js";
+      }
+
+      var pdfText = "";
+      var pdfName = "";
+      var pdfPageCount = 0;
+      var messages = [];
+      var inputText = "";
+      var isLoading = false;
+
+      var pdfInput = document.getElementById("pdf-input");
+      var pdfStatus = document.getElementById("pdf-status");
+      var chatLog = document.getElementById("chat-log");
+      var msgInput = document.getElementById("msg-input");
+      var sendBtn = document.getElementById("send-btn");
+
+      function setComposerEnabled(on) {
+        msgInput.disabled = !on || isLoading;
+        sendBtn.disabled = !on || isLoading;
+      }
+
+      function scrollChatToBottom() {
+        requestAnimationFrame(function () {
+          chatLog.scrollTop = chatLog.scrollHeight;
+        });
+      }
+
+      function makeRow(role, labelText) {
+        var row = document.createElement("div");
+        row.className = "row " + role;
+        var wrap = document.createElement("div");
+        wrap.className = "bubble-wrap";
+        var lab = document.createElement("div");
+        lab.className = "bubble-label";
+        lab.textContent = labelText;
+        wrap.appendChild(lab);
+        row.appendChild(wrap);
+        return { row: row, wrap: wrap };
+      }
+
+      function renderHistory() {
+        chatLog.innerHTML = "";
+        for (var i = 0; i < messages.length; i++) {
+          var m = messages[i];
+          var role = m.role;
+          var isErr = !!m.isError;
+          var kind = role === "user" ? "user" : isErr ? "error" : "assistant";
+          var label = role === "user" ? "You" : isErr ? "Error" : "Assistant";
+          var built = makeRow(kind, label);
+          var div = document.createElement("div");
+          div.className = "msg " + (kind === "error" ? "error" : kind);
+          div.textContent = m.content;
+          built.wrap.appendChild(div);
+          chatLog.appendChild(built.row);
+        }
+        if (isLoading) {
+          var loadBuilt = makeRow("loading", "Assistant");
+          var loadDiv = document.createElement("div");
+          loadDiv.className = "msg loading";
+          var dots = document.createElement("span");
+          dots.className = "dots";
+          dots.innerHTML = "<span></span><span></span><span></span>";
+          var t = document.createElement("span");
+          t.textContent = "Thinking…";
+          loadDiv.appendChild(dots);
+          loadDiv.appendChild(t);
+          loadBuilt.wrap.appendChild(loadDiv);
+          chatLog.appendChild(loadBuilt.row);
+        }
+        scrollChatToBottom();
+      }
+
+      function dataUrlToUint8Array(dataUrl) {
+        var comma = dataUrl.indexOf(",");
+        var base64 = dataUrl.slice(comma + 1);
+        var binary = atob(base64);
+        var len = binary.length;
+        var bytes = new Uint8Array(len);
+        for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      }
+
+      function truncatePdfText(text) {
+        if (text.length <= PDF_TRUNCATE_LEN) return text;
+        return (
+          text.slice(0, PDF_TRUNCATE_LEN) +
+          "\n\n[... PDF text truncated for context limit ...]"
+        );
+      }
+
+      async function extractPdfTextFromBytes(uint8Array) {
+        var loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+        var pdf = await loadingTask.promise;
+        var numPages = pdf.numPages;
+        var chunks = [];
+        for (var p = 1; p <= numPages; p++) {
+          var page = await pdf.getPage(p);
+          var textContent = await page.getTextContent();
+          var parts = textContent.items.map(function (item) {
+            return "str" in item ? item.str : "";
+          });
+          var pageText = parts.join(" ").replace(/\s+\n/g, "\n").trim();
+          chunks.push("--- Page " + p + " ---\n" + pageText);
+        }
+        return {
+          text: chunks.join("\n\n").trim(),
+          numPages: numPages,
+        };
+      }
+
+      pdfInput.addEventListener("change", function () {
+        var file = pdfInput.files && pdfInput.files[0];
+        if (!file) return;
+        if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) {
+          pdfStatus.textContent = "Please choose a PDF file.";
+          pdfStatus.classList.remove("ready");
+          return;
+        }
+
+        pdfName = file.name;
+        pdfPageCount = 0;
+        pdfStatus.textContent = "Reading " + pdfName + "…";
+        pdfStatus.classList.remove("ready");
+        pdfText = "";
+        messages = [];
+        renderHistory();
+        setComposerEnabled(false);
+
+        var reader = new FileReader();
+        reader.onerror = function () {
+          pdfStatus.textContent = "Could not read file.";
+          pdfStatus.classList.remove("ready");
+        };
+        reader.onload = async function () {
+          try {
+            var dataUrl = reader.result;
+            if (typeof dataUrl !== "string") {
+              throw new Error("Unexpected file read result.");
+            }
+            var bytes = dataUrlToUint8Array(dataUrl);
+            var extracted = await extractPdfTextFromBytes(bytes);
+            pdfPageCount = extracted.numPages || 0;
+            pdfText = extracted.text || "";
+            if (!pdfText.length) {
+              pdfText = "(No extractable text in this PDF.)";
+            }
+            pdfStatus.textContent =
+              "Loaded: " +
+              pdfName +
+              (pdfPageCount
+                ? " · " + pdfPageCount + " page" + (pdfPageCount === 1 ? "" : "s")
+                : "");
+            pdfStatus.classList.add("ready");
+            setComposerEnabled(true);
+          } catch (e) {
+            pdfStatus.textContent =
+              "PDF error: " + (e && e.message ? e.message : String(e));
+            pdfStatus.classList.remove("ready");
+            pdfText = "";
+            pdfName = "";
+            pdfPageCount = 0;
+            setComposerEnabled(false);
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+
+      async function sendMessage() {
+        if (!pdfText && !pdfName) return;
+        var text = (inputText || msgInput.value || "").trim();
+        if (!text || isLoading) return;
+
+        messages.push({ role: "user", content: text });
+        msgInput.value = "";
+        inputText = "";
+        isLoading = true;
+        setComposerEnabled(!!pdfName);
+        renderHistory();
+
+        var systemContent =
+          "You are a helpful assistant. Answer questions only based on the provided PDF content.\n\n" +
+          "The document is split by page. Each block begins with a marker line exactly in this form: --- Page N --- where N is the 1-based page number in the original PDF.\n\n" +
+          "Whenever you use information from a specific page, cite it in your answer using (p. N) for one page or (pp. N–M) for a range, placed right after the sentence or clause it supports. Use only page numbers that appear in those markers—do not invent pages. If something is unclear or spans many pages, say so briefly.\n\n" +
+          "PDF Content:\n" +
+          truncatePdfText(pdfText);
+
+        var apiMessages = [{ role: "system", content: systemContent }].concat(
+          messages.map(function (m) {
+            return { role: m.role, content: m.content };
+          })
+        );
+
+        try {
+          var res = await fetch(CHAT_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "gpt-4o-mini",
+              messages: apiMessages,
+            }),
+          });
+
+          var data = null;
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = null;
+          }
+
+          if (!res.ok) {
+            var errMsg =
+              (data &&
+                data.error &&
+                data.error.message &&
+                String(data.error.message)) ||
+              "Request failed (" + res.status + ")";
+            messages.push({
+              role: "assistant",
+              content: errMsg,
+              isError: true,
+            });
+          } else {
+            var reply =
+              data &&
+              data.choices &&
+              data.choices[0] &&
+              data.choices[0].message &&
+              data.choices[0].message.content;
+            if (typeof reply !== "string") {
+              messages.push({
+                role: "assistant",
+                content: "Unexpected API response shape.",
+                isError: true,
+              });
+            } else {
+              messages.push({ role: "assistant", content: reply });
+            }
+          }
+        } catch (err) {
+          messages.push({
+            role: "assistant",
+            content:
+              "Could not reach the chat server. Run `npm start` and open http://localhost:3000 — " +
+              (err && err.message ? err.message : String(err)),
+            isError: true,
+          });
+        } finally {
+          isLoading = false;
+          setComposerEnabled(!!pdfName && !!pdfText);
+          renderHistory();
+        }
+      }
+
+      sendBtn.addEventListener("click", sendMessage);
+      msgInput.addEventListener("input", function () {
+        inputText = msgInput.value;
+      });
+      msgInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      setComposerEnabled(false);
+    })();
+  </script>
+</body>
+</html>
